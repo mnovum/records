@@ -16,7 +16,7 @@ const SIMPLE = (typeof window !== "undefined" && window.RR_SIMPLE) || /*__SIMPLE
 // Research data: the Google Apps Script web app behind the "monuments data" sheet. Nothing is sent
 // unless the learner has seen the notice and chosen to share (store.consent === "yes").
 const RESULTS_ENDPOINT = (typeof window !== "undefined" && window.RR_ENDPOINT) || "https://script.google.com/macros/s/AKfycbywsmiSChYxsX8wV3AC3b4w5rARGOdySYZB-0_Jwd5_VUkiYgThtiy21_-ulzGT-aJe/exec";
-const DATA_PAGE = (typeof window !== "undefined" && window.RR_DATA_PAGE) || "";
+const DATA_PAGE = (typeof window !== "undefined" && window.RR_DATA_PAGE) || "https://www.mnovum.org/data";
 const STORE_KEY = "record-practice-v3";
 
 const L26 = "abcdefghijklmnopqrstuvwxyz";
