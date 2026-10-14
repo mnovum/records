@@ -216,18 +216,24 @@ function show(view) {
   const g = $("#go"); if (g && g.onclick && !store.consent && RESULTS_ENDPOINT) { const f = g.onclick; g.onclick = () => consentAsk(f); }
 }
 const shortId = () => store.uid.slice(0, 7);
-const CONSENT_VERSION = "2026-10-13";
+const CONSENT_VERSION = "2026-10-13b";
 function consentAsk(then) {
-  panel(`<div class="eyebrow">Before you begin</div><h2>Help with the research</h2>
+  // shown over the current screen (which is hidden, not replaced), so the settings the learner chose survive
+  const view = $("#view"), prev = [...view.children];
+  prev.forEach(el => { el.dataset.rrHidden = "1"; el.style.display = "none"; });
+  const box = document.createElement("div"); view.appendChild(box);
+  const show = html => { box.innerHTML = `<div class="panel start">${html}</div>`; };
+  show(`<div class="eyebrow">Before you begin</div><h2>Help with the research</h2>
     <div class="consent">
       <p>The Monuments is part of a research project on how people build knowledge that lasts. Your practice results would help: what you remembered, how quickly, and how sure you were.</p>
       <p><b>They're anonymous.</b> Results are linked only to a random code made by this browser (yours is <b class="code">${esc(shortId())}</b>). It is never linked to your name, your email or your mnovum account; those stay with the course site and never reach the research data. Your IP address isn't stored.</p>
-      <p>Anonymous results may be used in research reports and publications, and may be shared with other researchers, always without anything that identifies you.</p>
+      <p>Anonymous results may be used in research reports and publications, may be shared with other researchers, and, as totals only, may be used to describe what learners achieve with the courses. Never with anything that identifies you.</p>
       <p>Practising works exactly the same whether you share or not, and you can change your mind any time under Progress.${DATA_PAGE ? ` <a href="${esc(DATA_PAGE)}" target="_blank" rel="noopener">See what the data shows so far.</a>` : ""}</p>
       <label class="agebox"><input type="checkbox" id="cAge"> I am 13 or older, or I am a parent or guardian choosing for my child.</label>
     </div>
     <div class="row consent-row"><button type="button" class="gocircle cyes" id="cYes" disabled>Share<br>anonymously</button><button type="button" class="gocircle cno" id="cNo">Don't<br>share</button></div>`);
-  const pick = v => { store.consent = v; store.consentAt = new Date().toISOString(); store.consentVersion = CONSENT_VERSION; save(); then(); };
+  const pick = v => { store.consent = v; store.consentAt = new Date().toISOString(); store.consentVersion = CONSENT_VERSION; save();
+    box.remove(); prev.forEach(el => { el.style.display = ""; delete el.dataset.rrHidden; }); then(); };
   $("#cAge").onchange = () => { $("#cYes").disabled = !$("#cAge").checked; };
   $("#cYes").onclick = () => { if ($("#cAge").checked) pick("yes"); }; $("#cNo").onclick = () => pick("no");
 }
@@ -284,7 +290,7 @@ function shortItem() {
       ${[1, 2, 3].map(n => `<button class="cb" data-c="${n}"><kbd>${n}</kbd> ${CONF[n]}</button>`).join("")}
       <span class="spacer"></span><span class="hints" id="hints"></span><button class="btn ghost small" id="hint">Hint</button></div>
   </div>`;
-  const res = { cid: r.cid, course: r.ctitle, letter: r.L.toUpperCase(), limitS: s.lim, hints: 0, typed: {}, firstKeyMs: {}, self: {}, auto: {} };
+  const res = { cid: r.cid, course: r.ctitle, letter: r.L.toUpperCase(), at: new Date().toISOString(), limitS: s.lim, hints: 0, typed: {}, firstKeyMs: {}, self: {}, auto: {} };
   liveTimer = startTimer($("#tm"), s.lim);
   const t0 = liveTimer.t0;
   const inputs = ORDER.map(k => $("#f_" + k));
@@ -396,7 +402,7 @@ function addressItem() {
 }
 function addressAnswer(cid, L, ms) {
   const s = session, it = s.items[s.i], r = it.row, multi = s.courses.length > 1, correct = cid === r.cid && L === r.L;
-  s.results.push({ cid: r.cid, course: r.ctitle, letter: r.L.toUpperCase(), kind: it.kind, prompt: r[it.kind], givenCourse: cid, givenLetter: L.toUpperCase(), correct, ms });
+  s.results.push({ cid: r.cid, course: r.ctitle, letter: r.L.toUpperCase(), at: new Date(Date.now() - ms).toISOString(), kind: it.kind, prompt: r[it.kind], givenCourse: cid, givenLetter: L.toUpperCase(), correct, ms });
   setKeys(null);
   $("#fb").classList.remove("dim");
   const where = (id, l) => (multi ? esc(course(id).title) + " " : "") + `<span class="L">${l.toUpperCase()}</span>`;
@@ -471,7 +477,7 @@ function retrievalRun(items, lim, settingsLog, multi) {
 function retrievalItem() {
   stopAll();
   const s = session, r = s.items[s.i], step = s.lim * 1000 / 5, ks = aspectsOf(r);
-  const res = { cid: r.cid, course: r.ctitle, letter: r.L.toUpperCase(), limitS: s.lim, avail: ks.length, claimMs: {}, undone: [], kept: 0 };
+  const res = { cid: r.cid, course: r.ctitle, letter: r.L.toUpperCase(), at: new Date().toISOString(), limitS: s.lim, avail: ks.length, claimMs: {}, undone: [], kept: 0 };
   $("#rInfo").textContent = `${s.i + 1} / ${s.items.length}`; $("#rProg").style.width = (100 * s.i / s.items.length) + "%"; $("#rCue").textContent = "";
   $("#slideWrap").innerHTML = slideHTML(r, "recall", { label: (s.multi ? r.ctitle + " · " : "") + "monument index" });
   const sl = $("#slide"), t0 = performance.now(), act = $("#rAct");
@@ -577,8 +583,8 @@ function progress() {
 }
 const HEAD = ["session_time", "test", "course", "letter", "item_type", "item", "given_course", "given_letter", "correct", "confidence", "limit_s", "recall_ms", "overtime", "grade_ms", "hints",
   ...FIELDS.map(f => "typed_" + f.key), ...FIELDS.map(f => "firstkey_ms_" + f.key), ...FIELDS.map(f => "self_" + f.key), ...FIELDS.map(f => "auto_" + f.key), "score", "room_mark",
-  ...FIELDS.map(f => "claim_ms_" + f.key), ...FIELDS.map(f => "kept_" + f.key), "aspects_asked", "reveal_ms", "check_ms", "revealed_early", "settings", "app_version", "consent_version", "anon_id"];
-const APP_VERSION = "2026-10-13";
+  ...FIELDS.map(f => "claim_ms_" + f.key), ...FIELDS.map(f => "kept_" + f.key), "aspects_asked", "reveal_ms", "check_ms", "revealed_early", "settings", "app_version", "consent_version", "item_time", "anon_id"];
+const APP_VERSION = "2026-10-13b";
 function rowsFor(h) {
   return h.results.map(r => { const A = h.test === "address", S = h.test === "short", Rt = h.test === "retrieval";
     return [h.ts, h.test, r.course, r.letter, A ? r.kind : "", A ? r.prompt : "", A ? ((course(r.givenCourse) || {}).title || r.givenCourse) : "", A ? r.givenLetter : "", A ? (r.correct ? 1 : 0) : "",
@@ -586,7 +592,7 @@ function rowsFor(h) {
       ...FIELDS.map(f => S ? r.typed[f.key] : ""), ...FIELDS.map(f => S ? r.firstKeyMs[f.key] ?? "" : ""), ...FIELDS.map(f => S ? r.self[f.key] : ""), ...FIELDS.map(f => S ? r.auto[f.key] ?? "" : ""),
       S ? r.score : (Rt ? r.kept : ""), h.test === "family" ? (r.mark ?? "") : "",
       ...FIELDS.map(f => Rt ? r.claimMs[f.key] ?? "" : ""), ...FIELDS.map(f => Rt ? (r.claimMs[f.key] == null ? 0 : r.undone.includes(f.key) ? 0 : 1) : ""),
-      Rt ? r.avail : "", Rt ? r.revealMs ?? "" : "", Rt ? r.checkMs ?? "" : "", Rt ? (r.early ? 1 : 0) : "", JSON.stringify(h.settings || {}), APP_VERSION, store.consentVersion || "", h.uid]; });
+      Rt ? r.avail : "", Rt ? r.revealMs ?? "" : "", Rt ? r.checkMs ?? "" : "", Rt ? (r.early ? 1 : 0) : "", JSON.stringify(h.settings || {}), APP_VERSION, store.consentVersion || "", r.at || "", h.uid]; });
 }
 function toCSV(H) {
   const q = v => { v = v == null ? "" : String(v); return /[",\n\t]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v; };
