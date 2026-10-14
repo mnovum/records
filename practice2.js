@@ -210,7 +210,7 @@ function slideHTML(r, mode, o = {}) {
 let current = "retrieval";
 function show(view) {
   stopAll(); current = view;
-  document.querySelectorAll("nav button").forEach(b => b.setAttribute("aria-selected", b.dataset.view === view));
+  document.querySelectorAll("#rrapp nav button").forEach(b => b.setAttribute("aria-selected", b.dataset.view === view));
   ({ retrieval: retrievalStart, address: addressStart, short: shortStart, progress, simple: simpleStart, family: retrievalStart })[view]();
   // the first time anyone starts a practice, show the research notice once
   const g = $("#go"); if (g && g.onclick && !store.consent && RESULTS_ENDPOINT) { const f = g.onclick; g.onclick = () => consentAsk(f); }
@@ -237,7 +237,7 @@ function consentAsk(then) {
   $("#cAge").onchange = () => { $("#cYes").disabled = !$("#cAge").checked; };
   $("#cYes").onclick = () => { if ($("#cAge").checked) pick("yes"); }; $("#cNo").onclick = () => pick("no");
 }
-document.querySelector("nav").addEventListener("click", e => { const b = e.target.closest("button"); if (b) show(b.dataset.view); });
+document.querySelector("#rrapp nav").addEventListener("click", e => { const b = e.target.closest("button"); if (b) show(b.dataset.view); });
 document.addEventListener("click", e => {
   const g = e.target.closest("[data-goto]"); if (g) { e.preventDefault(); show(g.dataset.goto); }
   const fsb = e.target.closest(".fsbtn"); if (fsb) { fsb.blur(); fullscreen(); const f = $("#f_index"); if (f) setTimeout(() => f.focus(), 200); }
@@ -605,8 +605,8 @@ function copy(text, el) {
   try { navigator.clipboard.writeText(text).then(ok, fb); } catch (e) { fb(); }
 }
 
-try { if (!document.fullscreenEnabled) { const w = document.querySelector(".wrap"); if (w) w.classList.add("nofs"); } } catch (e) {}
-if (SIMPLE) { const w = document.querySelector(".wrap"); if (w) w.classList.add("simple"); show("simple"); }
+try { if (!document.fullscreenEnabled) { const w = document.querySelector("#rrapp .wrap"); if (w) w.classList.add("nofs"); } } catch (e) {}
+if (SIMPLE) { const w = document.querySelector("#rrapp .wrap"); if (w) w.classList.add("simple"); show("simple"); }
 else show("retrieval");
 
 })();
