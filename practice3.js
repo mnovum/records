@@ -63,6 +63,9 @@ HELP.walk = [
   "Every answer is followed by the monument itself: for a few seconds when you're right, and until you go on when you're not. Take it in; that look is part of the practice.",
   "Room by room walks the house from A to Z and visits every course's station in a room before moving on. Mix courses to practise telling them apart: each course keeps the same station in every room."];
 HELP.simple = HELP.retrieval.slice(0, 2);
+HELP.simplewalk = [
+  "First, a walk through the edifice. Each room appears with one station marked: type the index word of the monument that lives there and press Enter. Enter on an empty box means you don't know. After each answer the monument appears; take it in.",
+  "Then retrieval practice on the same monuments.", ...HELP.retrieval.slice(0, 2)];
 
 // Positions on the slide, in % of width/height, measured from the template (x, y, w, h)
 const POS = {
@@ -596,18 +599,21 @@ function walkStart() {
     let rows = cs.flatMap(rowsOf).filter(r => inChapters(r, chosen(letters)) && roomOK(r) && String(r.index || "").trim());
     rows.sort((a, b) => a.L.localeCompare(b.L) || slot(a) - slot(b));        // room by room, stations in order
     if (order === "shuf") rows = shuffle(rows);
-    if (!rows.length) return;
-    session = { ts: new Date(nowMs()).toISOString(), courses: cs.map(c => c.id), i: 0, results: [], items: rows, settingsLog: { letters, courses, order } };
-    preload(rows.flatMap(r => [ROOMS.img[r.L], r.img]));
-    walkItem();
+    walkRun(rows, cs, { letters, courses, order });
   };
+}
+function walkRun(rows, cs, settingsLog, after) {
+  if (!rows.length) return after ? after() : undefined;
+  session = { ts: new Date(nowMs()).toISOString(), courses: cs.map(c => c.id), i: 0, results: [], items: rows, settingsLog, after };
+  preload(rows.flatMap(r => [ROOMS.img[r.L], r.img]));
+  walkItem();
 }
 function walkItem() {
   const s = session, r = s.items[s.i], right = s.results.filter(x => x.correct).length;
   $("#view").innerHTML = `<div class="stage" id="stage">
     <div class="bar"><span>${s.i + 1} / ${s.items.length}</span><div class="prog"><i style="width:${100 * s.i / s.items.length}%"></i></div><span>${right} named</span><span class="spacer"></span><button class="btn ghost small fsbtn">Full screen</button><button class="btn ghost small" id="wStop">Stop</button></div>
     <div id="slideWrap">${roomSlide(r)}</div>
-    <form class="walkin" id="wForm" autocomplete="off"><span class="dim small">is for</span><input id="wIn" placeholder="index word" autocomplete="off" autocapitalize="characters" spellcheck="false" aria-label="Index word"><button class="btn small" type="submit">Check</button><button class="btn ghost small" type="button" id="wDk">Don't know</button></form>
+    <form class="walkin" id="wForm" autocomplete="off"><input id="wIn" placeholder="index word" autocomplete="off" autocapitalize="characters" spellcheck="false" aria-label="Index word"><button class="btn small" type="submit">Check</button><button class="btn ghost small" type="button" id="wDk">Don't know</button></form>
     <div id="fb" class="dim small">Type the index word and press Enter. Enter on an empty box means you don't know.</div></div>`;
   const t0 = performance.now(); let done = false;
   const submit = v => { if (done) return; done = true; walkAnswer(String(v || "").trim(), Math.round(performance.now() - t0)); };
@@ -643,7 +649,8 @@ function walkNext() {
   walkDone();
 }
 function walkDone() {
-  stopAll(); if (!session || !session.results.length) return show("walk");
+  stopAll(); const after = session && session.after;
+  if (!session || !session.results.length) return after ? after() : show("walk");
   const rec = finish("walk"), R = rec.results, ok = R.filter(x => x.correct), multi = new Set(R.map(x => x.cid)).size > 1;
   panel(`<div class="eyebrow">Edifice walk · done</div><h2>${ok.length} of ${R.length} named</h2>
     <div class="stats"><div class="stat"><b>${pct(ok.length, R.length)}</b><span>accuracy</span></div>
@@ -651,7 +658,8 @@ function walkDone() {
     <div class="tablewrap"><table class="t"><thead><tr><th>Room</th><th>Monument</th><th>Index word</th><th>You said</th><th>Time</th></tr></thead><tbody>
     ${R.map(x => { const row = rowAt(x.cid, x.letter.toLowerCase()); return `<tr><td>${esc(x.prompt)}</td><td>${multi ? esc(x.course) + " " : ""}<span class="L">${x.letter}</span></td><td>${esc(((row && row.index) || "").toUpperCase())}</td>
       <td class="${x.correct ? "v1" : "v0"}">${esc(x.typed.index ? x.typed.index.toUpperCase() : "–")}</td><td class="n">${secs(x.ms)}</td></tr>`; }).join("")}</tbody></table></div>
-    <div class="row" style="margin-top:18px"><button class="btn" data-goto="walk">Go again</button><button class="btn ghost" data-goto="progress">Progress</button></div>`);
+    <div class="row" style="margin-top:18px">${after ? `<button class="btn" id="wThen">Now: retrieval practice</button>` : `<button class="btn" data-goto="walk">Go again</button><button class="btn ghost" data-goto="progress">Progress</button>`}</div>`);
+  if (after) { const b = $("#wThen"); b.onclick = after; try { b.focus(); } catch (e) {} }
 }
 if (!ROOMS) { const b = document.querySelector('nav.rr-nav button[data-view="walk"]'); if (b) b.remove(); }
 
@@ -671,13 +679,18 @@ function retrievalStart() {
     retrievalRun(items, lim, { letters, courses, aspects, order, limitS: lim }, cs.length > 1, { aspects: chosen(aspects) });
   };
 }
+function simpleRetrieval() {
+  const lim = Math.max(5, Number(SIMPLE.seconds) || 15);
+  retrievalRun(COURSES.flatMap(rowsOf), lim, { simple: true, title: SIMPLE.title || "", limitS: lim }, COURSES.length > 1);
+}
 function simpleStart() {
-  const c = COURSES[0];
-  startScreen(`${checkinBanner()}${help("simple")}<div class="eyebrow">Retrieval practice</div><h2>${esc(SIMPLE.title || (c ? c.title : ""))}</h2>${helpBox("simple")}${goBtn("Begin", true)}`);
-  $("#go").onclick = () => {
-    const lim = Math.max(5, Number(SIMPLE.seconds) || 15);
-    retrievalRun(COURSES.flatMap(rowsOf), lim, { simple: true, title: SIMPLE.title || "", limitS: lim }, COURSES.length > 1);
-  };
+  const c = COURSES[0], slot = r => Number(course(r.cid).slot) || 99;
+  const walkRows = ROOMS ? COURSES.flatMap(rowsOf).filter(r => roomOK(r) && String(r.index || "").trim()).sort((a, b) => a.L.localeCompare(b.L) || slot(a) - slot(b)) : [];
+  const walk = walkRows.length > 0;
+  startScreen(`${checkinBanner()}${help(walk ? "simplewalk" : "simple")}<div class="eyebrow">${walk ? "Edifice walk, then retrieval practice" : "Retrieval practice"}</div><h2>${esc(SIMPLE.title || (c ? c.title : ""))}</h2>${helpBox(walk ? "simplewalk" : "simple")}${goBtn("Begin", true)}
+    ${walk ? `<p style="margin-top:14px"><button class="btn ghost small" id="skipWalk">Skip the walk</button></p>` : ""}`);
+  $("#go").onclick = () => walk ? walkRun(walkRows, COURSES, { simple: true, title: SIMPLE.title || "", order: "walk" }, simpleRetrieval) : simpleRetrieval();
+  if (walk) $("#skipWalk").onclick = simpleRetrieval;
 }
 function retrievalRun(items, lim, settingsLog, multi, opts = {}) {
   if (!items.length) return;
@@ -823,7 +836,7 @@ function progress() {
 const HEAD = ["session_time", "test", "course", "letter", "item_type", "item", "given_course", "given_letter", "correct", "confidence", "limit_s", "recall_ms", "overtime", "grade_ms", "hints",
   ...FIELDS.map(f => "typed_" + f.key), ...FIELDS.map(f => "firstkey_ms_" + f.key), ...FIELDS.map(f => "self_" + f.key), ...FIELDS.map(f => "auto_" + f.key), "score", "room_mark",
   ...FIELDS.map(f => "claim_ms_" + f.key), ...FIELDS.map(f => "kept_" + f.key), "aspects_asked", "reveal_ms", "check_ms", "revealed_early", "settings", "app_version", "consent_version", "item_time", "parts_asked", "checkin_days", "session_end", "anon_id"];
-const APP_VERSION = "2026-10-r4";
+const APP_VERSION = "2026-10-r5";
 function rowsFor(h) {
   return h.results.map(r => { const A = h.test === "address", S = h.test === "short", W = h.test === "walk", Rt = h.test === "retrieval" || h.test === "checkin";
     return [h.ts, h.test, r.course, r.letter, (A || W) ? r.kind : "", (A || W) ? r.prompt : "", A ? ((course(r.givenCourse) || {}).title || r.givenCourse) : "", A ? r.givenLetter : "", (A || W) ? (r.correct ? 1 : 0) : "",
