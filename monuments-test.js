@@ -289,19 +289,29 @@ function consentAsk(then) {
     box.remove(); prev.forEach(el => { el.style.display = ""; }); then(); };
   $("#cYes").onclick = () => pick("yes"); $("#cNo").onclick = () => pick("no");
 }
-function fullscreen() {
-  const st = $("#stage"); if (!st) return;
-  if (st.classList.contains("fs")) { st.classList.remove("fs"); try { if (document.fullscreenElement) document.exitFullscreen(); } catch (e) {} return; }
-  try { st.requestFullscreen().then(() => st.classList.add("fs")).catch(() => st.classList.add("fs")); } catch (e) { st.classList.add("fs"); }
+// Full screen belongs to a container that is never re-drawn (the stage is rebuilt for every question, so it can't be the fullscreen element:
+// the browser leaves fullscreen the moment that element is removed). fsOn is carried onto each new stage as it appears.
+let fsOn = false;
+const fsHost = () => ($("#view") && $("#view").closest(".wrap")) || $("#rrapp") || document.documentElement;
+function fsSet(on) {
+  fsOn = on; const st = $("#stage"); if (st) st.classList.toggle("fs", on);
+  if (!on) { try { if (document.fullscreenElement) document.exitFullscreen(); } catch (e) {} }
 }
-document.addEventListener("fullscreenchange", () => { const st = $("#stage"); if (st && !document.fullscreenElement) st.classList.remove("fs"); });
+function fullscreen() {
+  if (!$("#stage")) return;
+  if (fsOn) return fsSet(false);
+  fsSet(true);
+  try { const p = fsHost().requestFullscreen(); if (p && p.catch) p.catch(() => {}); } catch (e) {}
+}
+document.addEventListener("fullscreenchange", () => { if (fsOn && !document.fullscreenElement) fsSet(false); });
+new MutationObserver(() => { if (!fsOn) return; const st = $("#stage"); if (st) { if (!st.classList.contains("fs")) st.classList.add("fs"); } else fsSet(false); }).observe($("#view"), { childList: true });
 document.addEventListener("click", e => {
   const g = e.target.closest("[data-goto]"); if (g) { e.preventDefault(); show(g.dataset.goto); }
   const fsb = e.target.closest(".fsbtn"); if (fsb) { fsb.blur(); fullscreen(); const f = $("#cIn") || $("#wIn") || $("#hIn"); if (f) setTimeout(() => f.focus(), 200); }
   const q = e.target.closest(".helpq"); if (q) { const h = q.closest(".panel, .ss").querySelector(".help"); h.hidden = !h.hidden; q.setAttribute("aria-expanded", String(!h.hidden)); }
   const inf = e.target.closest(".info"); document.querySelectorAll(".info.open").forEach(x => { if (x !== inf) x.classList.remove("open"); }); if (inf) inf.classList.toggle("open");
 });
-document.addEventListener("keydown", e => { if (e.key === "Escape") { const st = $("#stage.fs"); if (st && !document.fullscreenElement) st.classList.remove("fs"); } });
+document.addEventListener("keydown", e => { if (e.key === "Escape" && fsOn && !document.fullscreenElement) fsSet(false); });
 $("#courseSel").innerHTML = COURSES.map(c => `<option value="${c.id}">${esc(c.title)}</option>`).join("");
 $("#courseSel").value = store.activeId;
 $("#courseSel").addEventListener("change", () => { store.activeId = $("#courseSel").value; save(); show(current); });
@@ -343,7 +353,7 @@ function finish(test) {
   return rec;
 }
 function finishRun() {
-  stopAll(); try { if (document.fullscreenElement) document.exitFullscreen(); } catch (e) {}
+  stopAll(); fsSet(false);
   const test = session.test;
   if (!session.results.length) return SIMPLE ? simpleStart() : show(test);
   const rec = finish(test);
@@ -588,12 +598,15 @@ function highlightsStart() {
     remember({ hLetters: cfg.letters, hCourses: cfg.courses, hWhich: cfg.which, hDir: cfg.dir, hLen: cfg.len }); begin(() => highlightsBegin(cfg));
   };
 }
+const xrefTargets = (row, h) => [...new Set([h.pts, ...[...(String(h.stem || "") + " " + h.hl).matchAll(/\^(\w+(?:,\w+)*)/g)].flatMap(m => m[1].split(","))].filter(Boolean).map(x => x.toLowerCase()))];
 function highlightsBegin(cfg) {
   const cs = coursesFrom(cfg.courses), w = chosen(cfg.which) || ["1", "2", "3", "4", "x"];
   let items = [];
   cs.flatMap(rowsOf).filter(r => inChapters(r, chosen(cfg.letters))).forEach(row => row.hls.forEach(h => {
     if (!w.includes(h.p === 5 ? "x" : String(h.p))) return;
-    const dir = cfg.dir === "prod" || cfg.dir === "loc" ? cfg.dir : (Math.random() < .5 ? "prod" : "loc");
+    let dir = cfg.dir === "prod" || cfg.dir === "loc" ? cfg.dir : (Math.random() < .5 ? "prod" : "loc");
+    // "which monument does it point to" needs every monument the superscripts name to be in this page (chapter / preview pages hold only some)
+    if (h.p === 5 && dir === "prod" && !xrefTargets(row, h).every(l => rowAt(row.cid, l))) { if (cfg.dir === "prod") return; dir = "loc"; }
     items.push({ row, h, dir });
   }));
   items = spread(items); if (cfg.len !== "all" && Number(cfg.len) < items.length) items = items.slice(0, Number(cfg.len));
@@ -679,8 +692,7 @@ function highlightReveal(it, given, ms) {
   // find / cross-reference: auto-graded letters (and paragraph)
   const wantL = kind === "xref-points" ? h.pts : r.L;
   const gl = given && given.pl, gp = given && given.pp;
-  const caretL = [...(h.stem + " " + h.hl).matchAll(/\^(\w+(?:,\w+)*)/g)].flatMap(m => m[1].split(",")).map(x => x.toLowerCase());
-  const tgtRows = kind === "xref-points" ? [...new Set([h.pts, ...caretL])].map(l => rowAt(r.cid, l)).filter(Boolean) : [];
+  const tgtRows = kind === "xref-points" ? xrefTargets(r, h).map(l => rowAt(r.cid, l)).filter(Boolean) : [];
   const wOK = kind === "xref-points" && given && given.word ? tgtRows.some(t => close(given.word, t.index) || titleOK(given.word, t.title)) : false;
   const lOK = kind === "xref-points" ? wOK : gl === wantL, pOK = kind === "find" ? gp === String(h.p) : true;
   res.ok = given && lOK && pOK ? 1 : 0; res.givenLetter = kind === "xref-points" ? "" : (gl ? gl.toUpperCase() : ""); if (kind === "xref-points" && given) res.given = given.word; res.givenPara = gp || "";
